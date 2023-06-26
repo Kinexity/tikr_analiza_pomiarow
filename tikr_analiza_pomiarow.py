@@ -11,6 +11,8 @@ from joblib import Parallel, delayed
 import os
 import multiprocessing
 import mif
+import glob
+import re
 
 def stosunek_U(f, RC):
 	if (RC < 0):
@@ -840,37 +842,38 @@ def mif_clean():
 
 import re
 
-def process_file(input_file_name, output_file_name):
-    data = []
-    with open(input_file_name, 'r') as input_file:
-        for line in input_file:
-            match = re.match(r'(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)', line)
-            if match:
-                data.append((int(match.group(1)), float(match.group(2)), float(match.group(3)), float(match.group(4)), float(match.group(5)), float(match.group(6)), float(match.group(7)), float(match.group(8)), match.group(9), match.group(10)))
-    with open(output_file_name, 'w') as output_file:
-        output_file.write("# MeshLab Point Cloud File\n")
-        for tuple in data:
-            output_file.write("{} {} {}\n".format(tuple[1], tuple[2], tuple[3]))
-
 def dist_test():
 	M = np.loadtxt(file_path2)
 	pt.plot(M, range(0,len(M)))
 	pt.show()
 
-from scipy.stats import gaussian_kde
-
 def remove_zeros(arr):
-	print(np.max(arr))
-	return arr[(arr != 0) & (arr < 999)]
+	return arr[(arr != 0)]
+
+def remove_nonpositive_elements(arr):
+    return arr[(arr > 0)]
+
+def generate_dense_points(x_sparse, y_sparse, num_points):
+    x_dense = np.linspace(min(x_sparse), max(x_sparse), num_points)
+    y_dense = np.interp(x_dense, x_sparse, y_sparse)
+    return x_dense, y_dense
+
+from scipy.interpolate import CubicSpline
+
+def generate_dense_points2(x_sparse, y_sparse, num_points):
+    spline = CubicSpline(x_sparse, y_sparse)
+    x_dense = np.linspace(min(x_sparse), max(x_sparse), num_points)
+    y_dense = spline(x_dense)
+    return x_dense, y_dense
 
 def plot_density(data, bins=30, label=None):
     # compute the kernel density estimate
-    density = pt.hist(data, bins=bins, density=True)[0]
+    density = pt.hist(data, bins=bins, density=True, alpha = 0.)[0]
 
     # add a histogram of the data for comparison
-    pt.hist(data, bins=bins, alpha=0.5, density=True, label='Data')
+    pt.hist(data, bins=bins, histtype='step', color="black", alpha=0.5, density=True, label=label)
 
-    #pt.yscale('log')
+    pt.yscale('log')
     # add a legend
     pt.legend()
     
@@ -878,26 +881,658 @@ def plot_density(data, bins=30, label=None):
     pt.show()
 
 
+def plot_density2(data1, data2, bins=30, label1=None, label2=None):
+    # compute the kernel density estimate for data1
+    density1 = pt.hist(data1, bins=bins, density=True,histtype='step',  alpha=0.5, label=label1)[0]
+
+    # compute the kernel density estimate for data2
+    density2 = pt.hist(data2, bins=bins, density=True,histtype='step',  alpha=0.5, label=label2)[0]
+
+    # set the y-axis scale to log
+    pt.yscale('log')
+
+    # add a legend
+    pt.legend()
+
+    # show the plot
+    pt.show()
+
+def plot_density3(data1, data2, data3, bins_=30, label1=None, label2=None, label3=None):
+    # compute the histogram for all data sets to obtain common bins
+    _, bins = np.histogram(np.concatenate((data1, data2, data3)), bins=bins_)
+
+    # compute the kernel density estimate for data1
+    density1 = pt.hist(data1, bins=bins, density=False, histtype='step', label=label1)[0]
+
+    # compute the kernel density estimate for data2
+    density2 = pt.hist(data2, bins=bins, density=False, histtype='step', label=label2)[0]
+
+    # compute the kernel density estimate for data3
+    density3 = pt.hist(data3, bins=bins, density=False, histtype='step', label=label3)[0]
+
+    # set the y-axis scale to log
+    pt.yscale('log')
+
+    # add a legend
+    pt.legend()
+
+    # show the plot
+    pt.show()
+
+import matplotlib as mpl
+
+def plot_density_2d(data1, data2, bins=30, label1=None, label2=None):
+    # Create a two-dimensional histogram
+    pt.hist2d(data1, data2, bins=bins, cmap='rainbow', norm=mpl.colors.LogNorm())
+
+    # Set the y-axis scale to log
+    #pt.yscale('log')
+
+    # Add a colorbar
+    pt.colorbar()
+
+    # Set labels and legend
+    pt.xlabel(label1)
+    pt.ylabel(label2)
+    pt.legend([label1, label2])
+
+    # Show the plot
+    pt.show()
+
+
+def plot_density2_same_bins(data1, data2, bins=30, label1=None, label2=None):
+    # compute the histogram bins
+    hist_range = (min(min(data1), min(data2)), max(max(data1), max(data2)))
+    hist_bins = pt.hist(data1, bins=bins, range=hist_range)[1]
+
+    pt.clf()
+
+    # compute the kernel density estimate for data1
+    density1 = pt.hist(data1, bins=hist_bins,histtype='step',  density=False, alpha=0.5, label=label1)[0]
+
+    # compute the kernel density estimate for data2
+    density2 = pt.hist(data2, bins=hist_bins,histtype='step', density=False, alpha=0.5, label=label2)[0]
+
+    # set the y-axis scale to log
+    pt.yscale('log')
+
+    # add a legend
+    pt.legend()
+
+    # show the plot
+    pt.show()
+
+
+
+num_rows = 10000
+num_cols = 20
+energies = np.array([100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1250, 1500, 2000, 3000, 4000, 5000])
+groups = {0:[10,11,16,17],1:[8,9,14,15],2:[12,13,18,19],3:[0,1,4,5],4:[2,3,6,7]}
+colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf', '#ffa07a', '#6a5acd']
+scintillator_list = ["CeBr3", "LaBr3Ce"]
+detector_lenght_list = [5, 7.5,10,20]
+cut_value_list = [1,0.1,0.01]
+symbols = ['o', 's', '^', 'v', 'D', 'p', '*', 'x', '+', 'h']
+physics_list_list = ["local", "G4EmLivermore", "G4EmPenelope"]
+
+def applyEnergyResolutionCeBr3(data):
+    # Constants for FWHM calculation
+    a = 8.135
+    b = 2.893e-2
+    c = -5.062e-6
+
+    # Calculate FWHM for each energy point
+    fwhm = a + b * data + c * data ** 2
+
+    # Apply random shift to each data point
+    shifted_data = np.random.normal(data, fwhm / 2.355)
+
+    # Zero out negative shifted points
+    #shifted_data = np.where(shifted_data < 0, 0, shifted_data)
+
+    return shifted_data
+
+def applyEnergyResolutionLaBr3(data):
+    # Constants for FWHM calculation
+    a = 6.206
+    b = 2.754e-2
+    c = -4.071e-6
+
+    # Calculate FWHM for each energy point
+    fwhm = a + b * data + c * data ** 2
+
+    # Apply random shift to each data point
+    shifted_data = np.random.normal(data, fwhm / 2.355)
+
+    # Zero out negative shifted points
+    shifted_data = np.where(shifted_data < 0, 0, shifted_data)
+
+    return shifted_data
+
+def applyEnergyResolutionGasOTPC(data):
+    # Constants for FWHM calculation
+    a = 6.206
+    b = 2.754e-2
+    c = -4.071e-6
+
+    # Calculate FWHM for each energy point
+    fwhm = 100 #a + b * data + c * data**2
+
+    # Apply random shift to each data point
+    shifted_data = np.random.normal(data, fwhm / 2.355)
+
+    # Zero out negative shifted points
+    #shifted_data = np.where(shifted_data < 0, 0, shifted_data)
+
+    return remove_zeros(shifted_data)
+
+#load simulation data from file based on parameters
+def load_data(scintilator_type, crystal_depth, phys_list, cut, data_index, energy, optional_string=""):
+	filename = "C:/Users/26kub/results_TPC/event_{}_{}cm_{}_{}mm{}_{}/".format(scintilator_type, crystal_depth, phys_list, cut, optional_string, data_index) + "event_{}keV_{}_{}cm_{}_{}mm{}_totalDeposit.bin".format(energy, scintilator_type, crystal_depth, phys_list, cut, optional_string)
+	f = open(filename, "rb")
+	data = np.fromfile(f, dtype=np.float64)
+	data = data[:len(data) // num_cols * num_cols]
+	return data.reshape(len(data) // num_cols, num_cols)
+
+#load simulation data from file based on parameters
+def load_gas_data(scintilator_type, crystal_depth, phys_list, cut, data_index, energy, optional_string=""):
+	filename = "C:/Users/26kub/results_TPC/event_{}_{}cm_{}_{}mm{}_{}/".format(scintilator_type, crystal_depth, phys_list, cut, optional_string, data_index) + "event_{}keV_{}_{}cm_{}_{}mm{}_totalDeposit_gas.bin".format(energy, scintilator_type, crystal_depth, phys_list, cut, optional_string)
+	f = open(filename, "rb")
+	data = np.fromfile(f, dtype=np.float64)
+	return data.reshape(len(data) // 1, 1)
+
+def load_both(scintilator_type, crystal_depth, phys_list, cut, data_index, energy, optional_string=""):
+	filename = "C:/Users/26kub/results_TPC/event_{}_{}cm_{}_{}mm{}_{}/".format(scintilator_type, crystal_depth, phys_list, cut, optional_string, data_index) + "event_{}keV_{}_{}cm_{}_{}mm{}_totalDeposit.bin".format(energy, scintilator_type, crystal_depth, phys_list, cut, optional_string)
+	f = open(filename, "rb")
+	data = np.fromfile(f, dtype=np.float64)
+	filename2 = "C:/Users/26kub/results_TPC/event_{}_{}cm_{}_{}mm{}_{}/".format(scintilator_type, crystal_depth, phys_list, cut, optional_string, data_index) + "event_{}keV_{}_{}cm_{}_{}mm{}_totalDeposit_gas.bin".format(energy, scintilator_type, crystal_depth, phys_list, cut, optional_string)
+	f2 = open(filename2, "rb")
+	data2 = np.fromfile(f2, dtype=np.float64)
+	print(len(data) // num_cols,len(data2))
+	len_actual = np.min([len(data) // num_cols,len(data2)])
+	len_actual -= len_actual % num_rows
+	data2 = data2[:len_actual]
+	data = data[:len_actual * num_cols]
+	return data.reshape(len(data) // num_cols, num_cols), data2.reshape(len(data2) // 1, 1)
+
+#extract subset of data from crystals from only one group
+def extract_group_data(data, group_index):
+	return data[:,groups[group_index]]
+
+def extract_crystal_data(data, crystal_index):
+	return data[:,crystal_index]
+
+# only count events where energy was deposited on one crystal
+def count_full_events_per_crystal(data, energy):
+	return np.sum(data >= energy * 0.999)
+
+# county events where energy deposited on the whole group (group_data is data
+# from one group!)
+def count_full_events_per_group(group_data, energy):
+	data = np.sum(group_data, axis = 1)
+	return np.sum(data >= energy * 0.999)
+
+
+def count_full_events_w_gas(data, gas_data, energy, gas_energy):
+	return np.sum(np.logical_and(data >= energy * 0.999, gas_data >= gas_energy * 0.999))
+
 def fetch_me_plots_peasant():
-	energies = np.array([100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1250, 1500, 2000, 3000, 4000, 5000])
-	energy_sums = []
-	num_rows = 1000000
-	num_cols = 20
+	vals = scintillator_list
+	srcs = len(vals)
+	simulation_indexes = [0,0,0]
+	energy_sums = [[] for i in range(srcs)]
+	full_events = [[[] for j in range(20)] for i in range(srcs)]
+	mtx = [np.array([1]) for i in range(srcs)]
 	for energy in energies:
-		filename = "C:/Users/26kub/source/OTPC_template/out/build/x86-Debug/results_TPC/event_{}keV_CeBr3_10cm_local_1_totalDeposit.bin".format(energy)
-		f = open(filename, "rb")
-		data = np.fromfile(f, dtype=np.float64)
-		matrix = data.reshape(num_rows, num_cols)
-		energy_sums.append(np.sum(matrix))
-		if energy == 1000:
-			plot_density(np.sum(matrix, axis=1), bins=100)
-	print(energy_sums)
+		for i in range(srcs):
+			data = load_data(vals[i],10, "G4EmLivermore", 0.01, simulation_indexes[i], energy)
+			energy_sums[i].append(np.sum(data))
+			for j in range(20):
+				#matrix = extract_group_data(data, j)
+				matrix = data[:, j]
+				#full_events[i][j].append(count_full_events_per_group(matrix, energy))
+				full_events[i][j].append(count_full_events_per_crystal(matrix, energy))
+			if energy == 5000:
+				mtx[i] = remove_zeros(np.sum(data, axis=1))
+	#plot_density2_same_bins(mtx[0],mtx[1],100,"CeBr3","LaBr3")
+	#print(full_events)
+	#print(full_events2)
+	#pt.title("no isotopes vs isotopes")
+	#plot_density2(mtx1,mtx2,100,"no isotopes","isotopes")
 	fig, ax = pt.subplots()
-	eff = np.array(energy_sums) / (1e6 * energies)
-	ax.plot(energies, np.array(energy_sums) / (1e6 * energies), "*g")
-	ax.set_ylim(bottom=0,top=np.max(eff) * 1.1)
+	#eff = np.array(energy_sums) / (1e6 * energies)
+	#ax.plot(energies, eff, colors[0], label="CeBr3")
+	#eff = np.array(energy_sums2) / (1e6 * energies)
+	#ax.plot(energies, eff, colors[1], label="LaBr3")
+	#for i in range(srcs):
+	#	for j in range(5):
+	#		ax.plot(energies, np.array(full_events[i][j]) / 1e6, colors[j] +
+	#		symbols[i], label="group {} {}".format(j, vals[i]))
+	for i in range(srcs):
+		#y_vals = np.array(energy_sums[i]) / (1e6 * energies)
+		y_vals = np.sum(np.array(full_events[i]), axis = 0) / 1e6
+		ax.scatter(energies, y_vals, color = colors[i], marker = symbols[i], label="{}".format(vals[i]))
+		ax.plot(*generate_dense_points2(energies, y_vals, 1000), color = colors[i], linestyle = "-")
+	#eff2 = np.array(energy_sums2) / (1e6 * energies)
+	#ax.plot(energies,eff2, ".r", label="isotopes")
+	#ax.plot(energies, np.array(full_events2) / 1e6, ".y", label="local cnt")
+	ax.set_ylim(bottom=0)#,top=np.max(np.array(full_events[1:]) / 1e6) * 1.1)
+	pt.title("total effs")
+	pt.ylabel("Efficiency")
+	pt.xlabel("Photon energy [keV]")
+	pt.legend()
 	pt.show()
 
+def fetch_me_plots_peasant2():
+	energies_list = []
+	energy_sums = []
+	energy_sums2 = []
+	full_events = [[],[],[],[],[]]
+	full_events2 = [[],[],[],[],[]]
+	#full_events2 = []
+	mtx1 = np.array([1])
+	mtx2 = np.array([1])
+	#for energy in energies:
+	#	filename =
+	#	"C:/Users/26kub/results_TPC/event_CeBr3_10cm_emlivermore_0.01mm_1/event_{}keV_CeBr3_10cm_emlivermore_0.01mm_totalDeposit.bin".format(energy)
+	#	f = open(filename, "rb")
+	#	data = np.fromfile(f, dtype=np.float64)
+	#	for i in range(5):
+	#		matrix = data.reshape(num_rows, num_cols)[:,groups[i]]
+	#		energy_sums.append(np.sum(matrix))
+	#		full_events[i].append(np.sum(matrix >= np.max(matrix)*0.999))
+	#	#if energy == 1000:
+	#	# mtx1 = remove_zeros(np.sum(matrix, axis=1))
+	file_pattern = "C:/Users/26kub/results_TPC/event_CeBr3_10cm_emlivermore_1mm_1/event_*keV_CeBr3_10cm_emlivermore_1mm_totalDeposit.bin"
+	file_paths = glob.glob(file_pattern)
+
+	for file_path in file_paths:
+		match = re.search(r"event_([\d\.]+)keV", file_path)
+		if match:
+			energy_keV = float(match.group(1))
+			energies_list.append(energy_keV)
+			with open(file_path, "rb") as f:
+				data = np.fromfile(f, dtype=np.float64)
+				for i in range(5):
+					matrix = data.reshape(num_rows, num_cols)[:,groups[i]]
+					energy_sums.append(np.sum(matrix))
+					full_events[i].append(np.sum(matrix >= np.max(matrix) * 0.999))
+					full_events2[i].append(np.sum(np.sum(matrix, axis=1) >= np.max(matrix) * 0.999))
+				# do something with the file
+				pass
+	#for energy in energies:
+	#	filename =
+	#	"C:/Users/26kub/results_TPC/event_CeBr3_10cm_emlivermore_0.01mm_1/event_{}keV_CeBr3_10cm_emlivermore_0.01mm_totalDeposit.bin".format(energy)
+	#	f = open(filename, "rb")
+	#	data = np.fromfile(f, dtype=np.float64)
+	#	matrix = data.reshape(num_rows, num_cols)#[:,groups[0]]
+	#	full_events2.append(np.sum(matrix >= np.max(matrix)*0.9))
+	#	energy_sums2.append(np.sum(matrix))
+	#	if energy == 1000:
+	#		mtx2 = remove_zeros(np.sum(matrix, axis=1))
+	print(full_events)
+	#print(full_events2)
+	#pt.title("no isotopes vs isotopes")
+	#plot_density2(mtx1,mtx2,100,"no isotopes","isotopes")
+	fig, ax = pt.subplots()
+	#eff = np.array(energy_sums) / (1e6 * energies)
+	#ax.plot(energies, eff, ".g", label="no isotopes")
+	for i in range(5):
+		ax.plot(energies_list, np.array(full_events[i]) / 1e6, color = colors[i], marker = ".", label="group {}, single crystal counting".format(i))
+		ax.plot(energies_list, np.array(full_events2[i]) / 1e6, color = colors[i], marker = "+", label="group {}, group counting".format(i))
+	#eff2 = np.array(energy_sums2) / (1e6 * energies)
+	#ax.plot(energies,eff2, ".r", label="isotopes")
+	#ax.plot(energies, np.array(full_events2) / 1e6, ".y", label="local cnt")
+	ax.set_ylim(bottom=0,top=np.max(np.array(full_events) / 1e6) * 1.1)
+	#pt.xscale("log")
+	pt.title("groups effs - group counting vs single crystal counting")
+	pt.ylabel("Efficiency")
+	pt.xlabel("Photon energy [keV]")
+	pt.legend()
+	pt.show()
+
+def fetch_me_plots_peasant3():
+	simulation_indexes = range(11,17)
+	srcs = len(simulation_indexes)
+	energy = 5000
+	mtx = np.array([])
+	for i in range(srcs):
+		data = load_data("LaBr3Ce",10, "G4EmLivermore", 0.01, simulation_indexes[i], energy)
+		mtx = np.concatenate((mtx, np.sum(data, axis=1)), axis = 0)
+	pt.ylabel("Fraction")
+	pt.xlabel("Photon energy [keV]")
+	plot_density(mtx,1000,"LaBr3")
+
+def remove_zero_fields(arr1, arr2):
+    non_zero_indices = np.nonzero(arr1)
+    return arr1[non_zero_indices], arr2[non_zero_indices]
+
+def remove_zero_fields_either(arr1, arr2):
+	print(len(arr1), len(arr2))
+	non_zero_indices1 = (arr1 != 0)
+	non_zero_indices2 = (arr2 != 0)
+	non_zero_indices = np.logical_or(non_zero_indices1, non_zero_indices2)
+	return arr1[non_zero_indices], arr2[non_zero_indices]
+
+def remove_nonpositive_fields_both(arr1, arr2):
+	pos1 = (arr1 > 0)
+	pos2 = (arr2 > 0)
+	pos = np.logical_and(pos1,pos2) #np.intersect1d(pos1, pos2)
+	return arr1[pos], arr2[pos]
+
+def fetch_me_plots_peasant5():
+	energy = 583
+	data = np.array([])
+	gas_data = np.array([])
+	for i in range(1,6):#(31, 47):
+		dt, gdt = load_both("CeBr3",10, "G4EmLivermore", 0.01, i, energy, "_dataFile")
+		data = np.concatenate((data, np.sum(dt, axis=1)), axis = 0)
+		gas_data = np.concatenate((gas_data, np.sum(gdt,axis=1)), axis = 0)
+	#dt, gdt = load_both("CeBr3",10, "G4EmLivermore", 0.01, 0, energy,
+	#"_dataFile")
+	#data = np.sum(dt, axis=1)
+	#gas_data = np.sum(gdt, axis=1)
+	print("Final events: ", len(gas_data), len(data))
+	#cnt = count_full_events_w_gas(np.sum(data, axis=1), np.sum(gas_data, axis=1),
+	#583, 595)
+	#print(cnt)
+	#print(cnt/1e6)
+	pt.title("Energy deposit [keV]")
+	data2, gas_data2 = remove_zero_fields(data, gas_data)
+	data3, gas_data3 = remove_nonpositive_fields_both(data, gas_data)
+	data4, gas_data4 = remove_nonpositive_fields_both(applyEnergyResolutionCeBr3(data3), applyEnergyResolutionGasOTPC(gas_data3))
+	gas_data_full_res_filtered = remove_nonpositive_elements(applyEnergyResolutionGasOTPC(remove_nonpositive_elements(gas_data)))
+	#plot_density_2d(data4, gas_data4,100,"crystals","gas")
+	#plot_density(gas_data, 100, "gas deposit")
+	plot_density2_same_bins(gas_data4, gas_data_full_res_filtered, 100, "all gas events", "gas events with crystal deposition")
+	plot_density3(remove_zeros(data), remove_nonpositive_elements(applyEnergyResolutionCeBr3(remove_zeros(data))), remove_nonpositive_elements(applyEnergyResolutionLaBr3(remove_zeros(data))), 100, "crystal depo, no res", "crystal depo, with CeBr3 res", "crystal depo, with LaBr3 res")
+
+def fetch_me_plots_peasant4():
+	vals = detector_lenght_list
+	#for i in range(-1,2):
+	#	for j in range(2):
+	#		for k in range(2):
+	#			vals.append("{:+d}".format(i) + str(j) + str(k))
+	print(vals)
+	srcs = len(vals)
+	full_events = [[] for i in range(srcs)]
+	for energy in energies:
+		for i in range(srcs):
+			data = load_data("CeBr3",vals[i], "G4EmLivermore", 0.01, 0, energy)#, "_" + vals[i])
+			s = np.sum([count_full_events_per_group(extract_group_data(data, i),energy) for i in range(5)])
+			#s = np.sum(data) / (energy)
+			full_events[i].append(s)
+	fig, ax = pt.subplots()
+	fig.set_size_inches(9,6)
+	fig.set_dpi(175)
+	ax.set_ylim(bottom=0,top=np.max(np.array(full_events) / 1e6) * 1.1)
+	for i in range(srcs):
+		ax.scatter(energies, np.array(full_events[i]) / 1e6, color = colors[i], marker='.', label=vals[i])
+	arr = np.array(full_events) / 1e6
+	for i in range(len(energies)):
+		energy = energies[i]
+		ax.axvline(energy, color='gray', linestyle='-', alpha=0.3)
+		#pt.text(energy, np.max(arr[:,i]), str(energy), ha='left', va='bottom')
+	pt.title("effs total")
+	pt.ylabel("Efficiency")
+	pt.xlabel("Photon energy [keV]")
+	pt.legend()
+	pt.show()
+
+dpi = 200
+
+def cut_value_comparison():
+	full_events = {cut_value:[] for cut_value in cut_value_list}
+	for energy in energies:
+		for cut_value in cut_value_list:
+			data = load_data("CeBr3",10, "G4EmLivermore", cut_value, 0, energy)
+			total_counts = np.sum([count_full_events_per_crystal(extract_crystal_data(data, i), energy) for i in range(20)])
+			full_events[cut_value].append(total_counts)
+	fig, ax = pt.subplots()
+	fig.set_size_inches(12,6)
+	ax.set_ylim(bottom=0,top=np.max(np.array(max(max(lst) for lst in full_events.values())) / 1e6) * 1.1)
+	for cut_value in cut_value_list:
+		i = cut_value_list.index(cut_value)
+		y_vals = np.array(full_events[cut_value]) / 1e6
+		ax.scatter(energies, y_vals, color = colors[i], marker=symbols[i], label=str(cut_value) + " mm")
+		ax.plot(*generate_dense_points2(energies, y_vals, 1000), color = colors[i], linestyle = "-")
+	for energy in energies:
+		ax.axvline(energy, color='gray', linestyle='-', alpha=0.3)
+	pt.xticks(energies, rotation = 45)
+	pt.title("Całkowita wydajność w zależności od parametru cut value")
+	pt.ylabel("Wydajność")
+	pt.xlabel("Energia fotonów [keV]")
+	pt.legend(loc='upper right')
+	pt.savefig("cut_value_comparison.png", dpi = dpi, bbox_inches='tight')
+	return
+
+def physics_list_comparison():
+	vals_list = physics_list_list
+	full_events = {val:[] for val in vals_list}
+	for energy in energies:
+		for val in vals_list:
+			data = load_data("CeBr3",10, val, 0.01, 0, energy)
+			total_counts = np.sum([count_full_events_per_crystal(extract_crystal_data(data, i), energy) for i in range(20)])
+			full_events[val].append(total_counts)
+	fig, ax = pt.subplots()
+	fig.set_size_inches(12,6)
+	ax.set_ylim(bottom=0,top=np.max(np.array(max(max(lst) for lst in full_events.values())) / 1e6) * 1.1)
+	for val in vals_list:
+		i = vals_list.index(val)
+		y_vals = np.array(full_events[val]) / 1e6
+		ax.scatter(energies, y_vals, color = colors[i], marker=symbols[i], label=str(val))
+		ax.plot(*generate_dense_points2(energies, y_vals, 1000), color = colors[i], linestyle = "-")
+	for energy in energies:
+		ax.axvline(energy, color='gray', linestyle='-', alpha=0.3)
+	pt.xticks(energies, rotation = 45)
+	pt.title("Całkowita wydajność w zależności od parametru physics list")
+	pt.ylabel("Wydajność")
+	pt.xlabel("Energia fotonów [keV]")
+	pt.legend(loc='upper right')
+	pt.savefig("physics_list_comparison.png", dpi = dpi, bbox_inches='tight')
+	return
+
+def scintillator_comparison():
+	vals_list = scintillator_list
+	full_events = {val:[] for val in vals_list}
+	for energy in energies:
+		for val in vals_list:
+			data = load_data(val,10, "G4EmLivermore", 0.01, 0, energy)
+			total_counts = np.sum([count_full_events_per_crystal(extract_crystal_data(data, i), energy) for i in range(20)])
+			full_events[val].append(total_counts)
+	fig, ax = pt.subplots()
+	fig.set_size_inches(12,6)
+	ax.set_ylim(bottom=0,top=np.max(np.array(max(max(lst) for lst in full_events.values())) / 1e6) * 1.1)
+	for val in vals_list:
+		i = vals_list.index(val)
+		y_vals = np.array(full_events[val]) / 1e6
+		ax.scatter(energies, y_vals, color = colors[i], marker=symbols[i], label=str(val))
+		ax.plot(*generate_dense_points2(energies, y_vals, 1000), color = colors[i], linestyle = "-")
+	for energy in energies:
+		ax.axvline(energy, color='gray', linestyle='-', alpha=0.3)
+	pt.xticks(energies, rotation = 45)
+	pt.title("Całkowita wydajność w zależności od materiału scyntylacyjnego")
+	pt.ylabel("Wydajność")
+	pt.xlabel("Energia fotonów [keV]")
+	pt.legend(loc='upper right')
+	pt.savefig("scintillator_comparison.png", dpi = dpi, bbox_inches='tight')
+	return
+
+def detector_lenght_comparison():
+	vals_list = detector_lenght_list
+	full_events = {val:[] for val in vals_list}
+	for energy in energies:
+		for val in vals_list:
+			data = load_data("CeBr3",val, "G4EmLivermore", 0.01, 0, energy)
+			total_counts = np.sum([count_full_events_per_crystal(extract_crystal_data(data, i), energy) for i in range(20)])
+			full_events[val].append(total_counts)
+	fig, ax = pt.subplots()
+	fig.set_size_inches(12,6)
+	ax.set_ylim(bottom=0,top=np.max(np.array(max(max(lst) for lst in full_events.values())) / 1e6) * 1.1)
+	for val in vals_list:
+		i = vals_list.index(val)
+		y_vals = np.array(full_events[val]) / 1e6
+		ax.scatter(energies, y_vals, color = colors[i], marker=symbols[i], label=str(val) + " cm")
+		ax.plot(*generate_dense_points2(energies, y_vals, 1000), color = colors[i], linestyle = "-")
+	for energy in energies:
+		ax.axvline(energy, color='gray', linestyle='-', alpha=0.3)
+	pt.xticks(energies, rotation = 45)
+	pt.title("Całkowita wydajność w zależności od długości detektorów gamma")
+	pt.ylabel("Wydajność")
+	pt.xlabel("Energia fotonów [keV]")
+	pt.legend(loc='upper right')
+	pt.savefig("detector_lenght_comparison.png", dpi = dpi, bbox_inches='tight')
+	return
+
+def counting_comparison():
+	vals_list = [True, False]
+	full_events = {val:[] for val in vals_list}
+	for energy in energies:
+		data = load_data("CeBr3",10, "G4EmLivermore", 0.01, 0, energy)
+		total_counts_crystals = np.sum([count_full_events_per_crystal(extract_crystal_data(data, i), energy) for i in range(20)])
+		total_counts_groups = np.sum([count_full_events_per_group(extract_group_data(data, i), energy) for i in range(5)])
+		full_events[False].append(total_counts_crystals)
+		full_events[True].append(total_counts_groups)
+	fig, ax = pt.subplots()
+	fig.set_size_inches(12,6)
+	ax.set_ylim(bottom=0,top=np.max(np.array(max(max(lst) for lst in full_events.values())) / 1e6) * 1.1)
+	for val in vals_list:
+		i = vals_list.index(val)
+		y_vals = np.array(full_events[val]) / 1e6
+		lbl = ""
+		if val:
+			lbl = "zliczanie grupowe"
+		else:
+			lbl = "zliczanie pojedyncze"
+		ax.scatter(energies, y_vals, color = colors[i], marker=symbols[i], label=lbl)
+		ax.plot(*generate_dense_points2(energies, y_vals, 1000), color = colors[i], linestyle = "-")
+	for energy in energies:
+		ax.axvline(energy, color='gray', linestyle='-', alpha=0.3)
+	pt.xticks(energies, rotation = 45)
+	pt.title("Całkowita wydajność w zależności od metody zliczania energii zdeponowanej")
+	pt.ylabel("Wydajność")
+	pt.xlabel("Energia fotonów [keV]")
+	pt.legend(loc='upper right')
+	pt.savefig("counting_comparison.png", dpi = dpi, bbox_inches='tight')
+	pt.clf()
+	#relative plot
+	fig, ax = pt.subplots()
+	fig.set_size_inches(12,6)
+	for val in vals_list:
+		full_events[val] = np.array(full_events[val]) / np.array(full_events[False])
+	ax.set_ylim(bottom=0,top=np.max(np.array(max(max(lst) for lst in full_events.values()))) * 1.1)
+	for val in vals_list:
+		i = vals_list.index(val)
+		y_vals = np.array(full_events[val])
+		lbl = ""
+		if val:
+			lbl = "zliczanie grupowe"
+		else:
+			lbl = "zliczanie pojedyncze"
+		ax.scatter(energies, y_vals, color = colors[i], marker=symbols[i], label=lbl)
+		ax.plot(*generate_dense_points2(energies, y_vals, 1000), color = colors[i], linestyle = "-")
+	for energy in energies:
+		ax.axvline(energy, color='gray', linestyle='-', alpha=0.3)
+	pt.xticks(energies, rotation = 45)
+	pt.title("Całkowita wydajność w zależności od metody zliczania energii zdeponowanej")
+	pt.ylabel("Stosunek wydajności")
+	pt.xlabel("Energia fotonów [keV]")
+	pt.legend(loc='upper right')
+	pt.savefig("counting_comparison_relative.png", dpi = dpi, bbox_inches='tight')
+	return
+
+def groups_comparison():
+	vals_list = list(range(5))
+	full_events = {val:[] for val in vals_list}
+	for energy in energies:
+		data = load_data("CeBr3",10, "G4EmLivermore", 0.01, 0, energy)
+		for val in vals_list:
+			total_counts = np.sum([count_full_events_per_group(extract_group_data(data, val), energy)])
+			full_events[val].append(total_counts)
+	fig, ax = pt.subplots()
+	fig.set_size_inches(12,6)
+	ax.set_ylim(bottom=0,top=np.max(np.array(max(max(lst) for lst in full_events.values())) / 1e6) * 1.1)
+	for val in vals_list:
+		i = vals_list.index(val)
+		y_vals = np.array(full_events[val]) / 1e6
+		ax.scatter(energies, y_vals, color = colors[i], marker=symbols[i], label="Grupa detektorów " + str(val))
+		ax.plot(*generate_dense_points2(energies, y_vals, 1000), color = colors[i], linestyle = "-")
+	for energy in energies:
+		ax.axvline(energy, color='gray', linestyle='-', alpha=0.3)
+	#y_ticks = ax.get_yticks()
+	#for y_tick in y_ticks:
+		#ax.axhline(y=y_tick, color='gray', alpha=0.5)
+	pt.xticks(energies, rotation = 45)
+	pt.title("Całkowita wydajność na grupę")
+	pt.ylabel("Wydajność")
+	pt.xlabel("Energia fotonów [keV]")
+	pt.legend(loc='upper right')
+	pt.savefig("group_comparison.png", dpi = dpi, bbox_inches='tight')
+	return
+
+def find_keys_with_extreme_maximal_values(data):
+    max_value = float('-inf')
+    min_value = float('inf')
+    max_key = None
+    min_key = None
+
+    for key, value in data.items():
+        max_val = max(value)
+
+        if max_val > max_value:
+            max_key = key
+            max_value = max_val
+
+        if max_val < min_value:
+            min_key = key
+            min_value = max_val
+
+    return max_key, min_key
+
+
+def position_comparison():
+	vals_list = []
+	digits = ['0', '1']
+	signs = ['+0', "+1", '-1']
+	for sign in signs:
+	    for digit1 in digits:
+	        for digit2 in digits:
+	            vals_list.append(sign + digit1 + digit2)
+	full_events = {val:[] for val in vals_list}
+	for energy in energies:
+		for val in vals_list:
+			data = load_data("CeBr3",10, "G4EmLivermore", 0.01, 0, energy, "_" + val)
+			total_counts = np.sum([count_full_events_per_crystal(extract_crystal_data(data, i), energy) for i in range(20)])
+			full_events[val].append(total_counts)
+	fig, ax = pt.subplots()
+	fig.set_size_inches(12,6)
+	ax.set_ylim(bottom=0,top=np.max(np.array(max(max(lst) for lst in full_events.values())) / 1e6) * 1.1)
+	max_m,min_m = find_keys_with_extreme_maximal_values(full_events)
+	new_vals = [max_m, min_m, "+000"]
+	for val in new_vals:
+		i = new_vals.index(val)
+		y_vals = np.array(full_events[val]) / 1e6
+		ax.scatter(energies, y_vals, color = colors[i], marker=symbols[i], label=str(val))
+		ax.plot(*generate_dense_points2(energies, y_vals, 1000), color = colors[i], linestyle = "-")
+	for energy in energies:
+		ax.axvline(energy, color='gray', linestyle='-', alpha=0.3)
+	pt.xticks(energies, rotation = 45)
+	pt.title("Całkowita wydajność w zależności od początkowego położenia cząstki")
+	pt.ylabel("Wydajność")
+	pt.xlabel("Energia fotonów [keV]")
+	pt.legend(loc='upper right')
+	pt.savefig("position_comparison.png", dpi = dpi, bbox_inches='tight')
+	return
+
+def generate_plots():
+	#cut_value_comparison()
+	#physics_list_comparison()
+	#scintillator_comparison()
+	#detector_lenght_comparison()
+	#counting_comparison()
+	#groups_comparison()
+	position_comparison()
+	return
 
 #matplotlib.rcParams.update({'font.size': 15})
 #zad4_plt()
@@ -906,11 +1541,7 @@ def fetch_me_plots_peasant():
 #vis3d_TPC()
 #tst()
 #mif_clean()
-#process_file("C:/Users/26kub/source/OTPC_template/out/build/x86-Release/log.txt",
-#"pointCloud.xyz")
 #dist_test()
-arr = np.array([0, 1, 2, 3, 4, 0, 5, 6, 1000, 7, 8, 1000, 9, 10])
-arr_filtered = remove_zeros(arr)
-print(arr_filtered)
+fetch_me_plots_peasant2()
 
-fetch_me_plots_peasant();
+#generate_plots()
