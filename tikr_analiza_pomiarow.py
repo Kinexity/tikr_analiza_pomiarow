@@ -866,19 +866,22 @@ def generate_dense_points2(x_sparse, y_sparse, num_points):
     y_dense = spline(x_dense)
     return x_dense, y_dense
 
-def plot_density(data, bins=30, label=None):
-    # compute the kernel density estimate
-    density = pt.hist(data, bins=bins, density=True, alpha = 0.)[0]
-
-    # add a histogram of the data for comparison
-    pt.hist(data, bins=bins, histtype='step', color="black", alpha=0.5, density=True, label=label)
-
-    pt.yscale('log')
-    # add a legend
-    pt.legend()
-    
-    # show the plot
-    pt.show()
+def plot_density(data, bins=30, label=None, yl=None, xl=None):
+	# compute the kernel density estimate
+	density = pt.hist(data, bins=bins, density=True, alpha = 0.)[0]
+	
+	# add a histogram of the data for comparison
+	pt.hist(data, bins=bins, histtype='step', color="black", alpha=0.5, density=True, label=label)
+	
+	pt.xlabel(xl)
+	pt.ylabel(yl)
+	
+	pt.yscale('log')
+	# add a legend
+	pt.legend()
+	
+	# show the plot
+	pt.show()
 
 
 def plot_density2(data1, data2, bins=30, label1=None, label2=None):
@@ -938,9 +941,7 @@ def plot_density_2d(data1, data2, bins=30, label1=None, label2=None):
 
     # Show the plot
     #pt.show()
-
-
-def plot_density2_same_bins(data1, data2, bins=30, label1=None, label2=None):
+def plot_density2_same_bins(data1, data2, bins=30, label1=None, label2=None, leg_loc='upper left'):
     # compute the histogram bins
     hist_range = (min(min(data1), min(data2)), max(max(data1), max(data2)))
     #hist_bins = pt.hist(data1, bins=bins, range=hist_range)[1]
@@ -955,7 +956,7 @@ def plot_density2_same_bins(data1, data2, bins=30, label1=None, label2=None):
     pt.yscale('log')
 
     # add a legend
-    pt.legend(loc='upper left')
+    pt.legend(loc=leg_loc)
 
 
 
@@ -1249,6 +1250,62 @@ def scintillator_comparison():
 	pt.savefig("scintillator_comparison.png", dpi = dpi, bbox_inches='tight')
 	return
 
+def efficiency_of_photon_catching_comparison():
+	vals_list = [48, 50]
+	full_events = {val:[] for val in vals_list}	
+	lbls = {48:"Ułamek fotonów z detektorem",50:"Ułamek fotonów bez detektora OTPC"}
+	for energy in energies:
+		for val in vals_list:
+			data = load_data("CeBr3",10, "G4EmLivermore", 0.01, val, energy)
+			total_counts = np.sum(np.logical_or.reduce(data > 0, axis = 1))
+			full_events[val].append(total_counts)
+	fig, ax = pt.subplots()
+	fig.set_size_inches(*inch_sizes)
+	ax.set_ylim(bottom=0,top=np.max(np.array(max(max(lst) for lst in full_events.values())) / 1e6) * 1.1)
+	for val in vals_list:
+		i = vals_list.index(val)
+		y_vals = np.array(full_events[val]) / 1e6
+		ax.scatter(energies, y_vals, color = colors[i], marker=symbols[i], label=lbls[val])
+		ax.plot(*generate_dense_points2(energies, y_vals, 1000), color = colors[i], linestyle = "-")
+	for energy in energies:
+		ax.axvline(energy, color='gray', linestyle='-', alpha=0.3)
+	pt.xticks(energies, rotation = ticks_rotation)
+	if use_titles:
+		pt.title("Ułamek fotonów, które zdeponowały jakąkolwiek energię w zależności od materiału scyntylacyjnego")
+	pt.ylabel("Ułamek fotonów")
+	pt.xlabel("Energia fotonów [keV]")
+	pt.legend(loc='upper right')
+	pt.savefig("efficiency_of_photon_catching_comparison.png", dpi = dpi, bbox_inches='tight')
+	return
+
+def detector_shadow_comparison():
+	vals_list = [48, 50]
+	lbls = {48:"Wydajność z detektorem OTPC",50:"Wydajność bez detektora OTPC"}
+	full_events = {val:[] for val in vals_list}
+	for energy in energies:
+		for val in vals_list:
+			data = load_data("CeBr3",10, "G4EmLivermore", 0.01, val, energy)
+			total_counts = np.sum([count_full_events_per_crystal(extract_crystal_data(data, i), energy) for i in range(20)])
+			full_events[val].append(total_counts)
+	fig, ax = pt.subplots()
+	fig.set_size_inches(*inch_sizes)
+	ax.set_ylim(bottom=0,top=np.max(np.array(max(max(lst) for lst in full_events.values())) / 1e6) * 1.1)
+	for val in vals_list:
+		i = vals_list.index(val)
+		y_vals = np.array(full_events[val]) / 1e6
+		ax.scatter(energies, y_vals, color = colors[i], marker=symbols[i], label=lbls[val])
+		ax.plot(*generate_dense_points2(energies, y_vals, 1000), color = colors[i], linestyle = "-")
+	for energy in energies:
+		ax.axvline(energy, color='gray', linestyle='-', alpha=0.3)
+	pt.xticks(energies, rotation = ticks_rotation)
+	if use_titles:
+		pt.title("Ułamek fotonów, które zdeponowały jakąkolwiek energię w zależności od materiału scyntylacyjnego")
+	pt.ylabel("Wydajność")
+	pt.xlabel("Energia fotonów [keV]")
+	pt.legend(loc='upper right')
+	pt.savefig("detector_shadow_comparison.png", dpi = dpi, bbox_inches='tight')
+	return
+
 def detector_lenght_comparison():
 	vals_list = detector_lenght_list
 	full_events = {val:[] for val in vals_list}
@@ -1279,12 +1336,14 @@ def detector_lenght_comparison():
 def counting_comparison():
 	vals_list = [True, False]
 	full_events = {val:[] for val in vals_list}
+	full_events_all = []
 	for energy in energies:
 		data = load_data("CeBr3",10, "G4EmLivermore", 0.01, 0, energy)
 		total_counts_crystals = np.sum([count_full_events_per_crystal(extract_crystal_data(data, i), energy) for i in range(20)])
 		total_counts_groups = np.sum([count_full_events_per_group(extract_group_data(data, i), energy) for i in range(5)])
 		full_events[False].append(total_counts_crystals)
 		full_events[True].append(total_counts_groups)
+		full_events_all.append(count_full_events_per_crystal(np.sum(data, axis = 1), energy))
 	fig, ax = pt.subplots()
 	fig.set_size_inches(*inch_sizes)
 	ax.set_ylim(bottom=0,top=np.max(np.array(max(max(lst) for lst in full_events.values())) / 1e6) * 1.1)
@@ -1296,6 +1355,12 @@ def counting_comparison():
 			lbl = "zliczanie grupowe"
 		else:
 			lbl = "zliczanie pojedyncze"
+		ax.scatter(energies, y_vals, color = colors[i], marker=symbols[i], label=lbl)
+		ax.plot(*generate_dense_points2(energies, y_vals, 1000), color = colors[i], linestyle = "-")
+	if True:
+		i = 2
+		y_vals = np.array(full_events_all) / 1e6
+		lbl = "zliczanie całkowite"
 		ax.scatter(energies, y_vals, color = colors[i], marker=symbols[i], label=lbl)
 		ax.plot(*generate_dense_points2(energies, y_vals, 1000), color = colors[i], linestyle = "-")
 	for energy in energies:
@@ -1358,6 +1423,7 @@ def find_keys_with_extreme_maximal_values(data):
 
     return max_key, min_key
 
+positions_dict = {"+100":"Najwyższa wydajność","+111":"Najniższa wydajność","+000":"Wydajność ze środka"}
 
 def position_comparison():
 	vals_list = []
@@ -1381,8 +1447,9 @@ def position_comparison():
 	for val in new_vals:
 		i = new_vals.index(val)
 		y_vals = np.array(full_events[val]) / 1e6
-		ax.scatter(energies, y_vals, color = colors[i], marker=symbols[i], label=str(val))
+		ax.scatter(energies, y_vals, color = colors[i], marker=symbols[i], label=str(positions_dict[val]))
 		ax.plot(*generate_dense_points2(energies, y_vals, 1000), color = colors[i], linestyle = "-")
+	print(np.min(np.array(full_events[min_m]) / 1e6))
 	for energy in energies:
 		ax.axvline(energy, color='gray', linestyle='-', alpha=0.3)
 	pt.xticks(energies, rotation = ticks_rotation)
@@ -1461,8 +1528,8 @@ def resolution_comparison_histogram2():
 	pt.yscale('log')
 	pt.legend(loc='upper left')
 	pt.show()
-	#pt.savefig("resolution_comparison_histogram2.png", dpi = dpi, bbox_inches='tight')
-
+	#pt.savefig("resolution_comparison_histogram2.png", dpi = dpi,
+	#bbox_inches='tight')
 import numpy as np
 
 def plot_cdf(mtx):
@@ -1490,7 +1557,7 @@ from scipy.signal import find_peaks
 from scipy.stats import gaussian_kde
 
 def approximate_pdf(values):
-	width = (np.max(values) - np.min(values)) / (10*len(values))
+	width = (np.max(values) - np.min(values)) / (10 * len(values))
 	kde = gaussian_kde(values, bw_method=width)  # Perform kernel density estimation
 	
 	# Generate a set of values to evaluate the PDF
@@ -1551,7 +1618,7 @@ def coincidence_2d_histogram():
 	energy = 583
 	data = np.array([])
 	gas_data = np.array([])
-	for i in range(1):#,6):#(31, 47):
+	for i in range(12,17):#(31, 47):
 		dt, gdt = load_both("CeBr3",10, "G4EmLivermore", 0.01, i, energy, "_dataFile")
 		data = np.concatenate((data, np.sum(dt, axis=1)), axis = 0)
 		gas_data = np.concatenate((gas_data, np.sum(gdt,axis=1)), axis = 0)
@@ -1561,15 +1628,24 @@ def coincidence_2d_histogram():
 		pt.title("Rozkład całkowitych zebranych energii przez detektory gamma i detektor TPC")
 	pt.xlabel("Całkowita zdeponowana energia na zdarzenie z rozdzielczością [keV]")
 	pt.ylabel("Liczba zdarzeń")
+	print(np.sum(gas_data >= 0.999 * 595) / len(gas_data) * 100)
+	print(np.sum(gas_data <= 1.001 * 595) / len(gas_data) * 100)
+	print(np.min(gas_data))
 	plot_density_2d(data, gas_data, 100, "Całkowita energia zebrana przez detektory gamma [keV]", "Całkowita energia zebrana przez detektor TPC [keV]")
 	ax.set_xlim(left=0)
 	pt.savefig("coincidence_2d_histogram.png", dpi = dpi, bbox_inches='tight')
+	pt.clf()
+	pt.axvline(595, color='gray', linestyle='-', alpha=0.3)
+	plot_density(gas_data, 1000, "Rozkład energii na gazie", "Liczba zdarzeń", "Energia zebrana na gazie [keV]")
+	#pt.plot(np.sort(gas_data), np.array(range(len(gas_data)))/float(len(gas_data)))
+	#pt.yscale("log")
+	#pt.show()
 
 def photopeak_coincidence_histogram():
 	energy = 583
 	data = np.array([])
 	gas_data = np.array([])
-	for i in range(1,6):#(31, 47):
+	for i in range(7,12):#(31, 47):
 		dt, gdt = load_both("CeBr3",10, "G4EmLivermore", 0.01, i, energy, "_dataFile")
 		data = np.concatenate((data, np.sum(dt, axis=1)), axis = 0)
 		gas_data = np.concatenate((gas_data, np.sum(gdt,axis=1)), axis = 0)
@@ -1581,23 +1657,25 @@ def photopeak_coincidence_histogram():
 	pt.ylabel("Liczba zdarzeń")
 	data4, gas_data4 = remove_nonpositive_fields_both(applyEnergyResolutionCeBr3(data), applyEnergyResolutionGasOTPC(gas_data))
 	gas_data_full_res_filtered = remove_nonpositive_elements(applyEnergyResolutionGasOTPC(remove_nonpositive_elements(gas_data)))
-	plot_density2_same_bins(gas_data_full_res_filtered, gas_data4, 100, "Wszystkie zdarzenia w gazie", "Zdarzenia w gazie koincydujące z fotopikiem")
+	plot_density2_same_bins(gas_data_full_res_filtered, gas_data4, 100, "Wszystkie zdarzenia w gazie", "Zdarzenia w gazie koincydujące z fotopikiem", "lower left")
 	ax.set_xlim(left=0)
 	pt.savefig("photopeak_coincidence_histogram.png", dpi = dpi, bbox_inches='tight')
 
 def generate_plots():
 	pt.rcParams.update({'font.size': 14})
-	cut_value_comparison()
-	physics_list_comparison()
-	scintillator_comparison()
-	detector_lenght_comparison()
-	counting_comparison()
-	groups_comparison()
-	position_comparison()
-	decay_anomaly_histogram()
-	resolution_comparison_histogram()
-	photopeak_coincidence_histogram()
-	coincidence_2d_histogram()
+	#cut_value_comparison()
+	#physics_list_comparison()
+	#scintillator_comparison()
+	#detector_lenght_comparison()
+	#counting_comparison()
+	#groups_comparison()
+	#position_comparison()
+	#decay_anomaly_histogram()
+	#resolution_comparison_histogram()
+	#photopeak_coincidence_histogram()
+	#coincidence_2d_histogram()
+	#efficiency_of_photon_catching_comparison()
+	detector_shadow_comparison()
 	#resolution_comparison_histogram2()
 	return
 
@@ -1610,5 +1688,4 @@ def generate_plots():
 #mif_clean()
 #dist_test()
 #fetch_me_plots_peasant5()
-
 generate_plots()
